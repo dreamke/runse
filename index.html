@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文本润色</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#111;background:#f5f5f5;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* Header */
+header{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;background:#fff;border-bottom:1px solid #e0e0e0;flex-shrink:0}
+header h1{font-size:15px;font-weight:500;margin-right:auto}
+.hbtn{background:none;border:1px solid #e0e0e0;padding:4px 10px;font-size:12px;color:#555;cursor:pointer;height:28px;line-height:1}
+.hbtn:hover{border-color:#999;color:#111}
+.hbtn:disabled{opacity:0.35;cursor:not-allowed}
+#btn-settings{font-size:13px;padding:4px 12px}
+
+/* Main layout */
+main{display:grid;grid-template-columns:1fr 180px 1fr;gap:0;flex:1;overflow:hidden}
+.col{display:flex;flex-direction:column;overflow:hidden;background:#fff}
+.col+.col{border-left:1px solid #e0e0e0}
+.col-head{padding:10px 16px 8px;border-bottom:1px solid #e0e0e0;font-size:12px;font-weight:500;color:#555;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.col-body{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:12px 16px}
+.col-foot{padding:8px 16px;border-top:1px solid #e0e0e0;flex-shrink:0;display:flex;align-items:center;gap:8px}
+
+/* Textarea */
+#input-text{flex:1;border:none;outline:none;resize:none;font-size:13px;line-height:1.7;color:#111;background:#fff;font-family:inherit;width:100%}
+#input-text::placeholder{color:#bbb}
+#char-count{font-size:11px;color:#bbb;margin-left:auto}
+
+/* Style buttons */
+.style-list{display:flex;flex-direction:column;gap:6px;flex:1;overflow-y:auto}
+.style-btn{border:1px solid #e0e0e0;background:#fff;padding:9px 10px;text-align:left;cursor:pointer;font-size:12px;color:#555;line-height:1.4;transition:none;flex-shrink:0}
+.style-btn:hover{border-color:#999;color:#111}
+.style-btn.active{background:#111;color:#fff;border-color:#111}
+.style-name{font-weight:500;font-size:12px;display:block}
+.style-desc{font-size:11px;opacity:0.7;display:block;margin-top:2px}
+
+#btn-polish{width:100%;background:#111;color:#fff;border:none;padding:10px;font-size:13px;font-weight:500;cursor:pointer;margin-top:10px;flex-shrink:0}
+#btn-polish:hover{background:#333}
+#btn-polish:disabled{background:#ccc;cursor:not-allowed}
+
+/* Result area */
+#result-area{flex:1;overflow-y:auto;font-size:13px;line-height:1.7;color:#111;white-space:pre-wrap;word-break:break-word;padding:0 0 8px}
+.placeholder{color:#bbb;font-style:normal}
+.loading-dots{display:inline-block}
+.loading-dots::after{content:'';animation:dots 1.2s steps(4,end) infinite}
+@keyframes dots{0%,100%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+
+/* Diff */
+ins{background:#e6f4ea;text-decoration:none;border-bottom:1px solid #34a853}
+del{background:#fce8e6;text-decoration:line-through;color:#c5221f}
+
+.result-controls{display:flex;align-items:center;gap:8px}
+#btn-copy{border:1px solid #e0e0e0;background:#fff;padding:4px 12px;font-size:12px;color:#555;cursor:pointer;height:28px}
+#btn-copy:hover{border-color:#999;color:#111}
+#btn-copy.copied{color:#27a;border-color:#27a}
+.diff-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#555;margin-left:auto;cursor:pointer;user-select:none}
+.diff-toggle input{margin:0}
+
+/* Modal base */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:#fff;border:1px solid #e0e0e0;width:700px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-head{padding:0 20px;border-bottom:1px solid #e0e0e0;display:flex;align-items:center;flex-shrink:0;height:44px}
+.modal-head h2{font-size:14px;font-weight:500;flex:0 0 auto}
+.modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:#555;padding:0 4px;line-height:1;margin-left:auto}
+.modal-close:hover{color:#111}
+.modal-body{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-height:0}
+.modal-foot{padding:12px 20px;border-top:1px solid #e0e0e0;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+
+/* Tabs - 独占一行 */
+.tabs{display:flex;border-bottom:1px solid #e0e0e0;flex-shrink:0;padding:0 20px;background:#fff}
+.tab-btn{flex:1;padding:11px 0;border:none;background:none;font-size:12px;color:#999;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;min-width:0;white-space:nowrap}
+.tab-btn.active{color:#111;border-bottom-color:#111;font-weight:500}
+
+/* Tab panels */
+.tab-panel{display:none;padding:20px;flex-direction:column;gap:16px;overflow-y:auto;flex:1}
+.tab-panel.active{display:flex}
+
+/* Forms */
+.form-row{display:flex;flex-direction:column;gap:6px}
+.form-row label{font-size:12px;font-weight:500;color:#555}
+.form-row input[type=text],.form-row input[type=password],.form-row input[type=url],.form-row textarea,.form-row select{border:1px solid #e0e0e0;padding:7px 10px;font-size:13px;outline:none;color:#111;background:#fff;width:100%;font-family:inherit}
+.form-row input:focus,.form-row textarea:focus,.form-row select:focus{border-color:#999}
+.form-row textarea{resize:vertical;min-height:60px;line-height:1.5}
+.radio-group{display:flex;gap:0;border:1px solid #e0e0e0;flex-wrap:wrap}
+.radio-group label{flex:1;display:flex;align-items:center;justify-content:center;padding:7px 0;font-size:12px;cursor:pointer;border-right:1px solid #e0e0e0;color:#555;gap:5px}
+.radio-group label:last-child{border-right:none}
+.radio-group input[type=radio]{display:none}
+.radio-group label:has(input:checked){background:#111;color:#fff}
+.form-hint{font-size:11px;color:#999;margin-top:2px}
+.form-row-inline{display:flex;gap:8px;align-items:flex-end}
+
+.btn-cancel{border:1px solid #e0e0e0;background:#fff;padding:7px 16px;font-size:13px;cursor:pointer;color:#555}
+.btn-cancel:hover{border-color:#999;color:#111}
+.btn-save{background:#111;color:#fff;border:none;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:500}
+.btn-save:hover{background:#333}
+.btn-test{border:1px solid #e0e0e0;background:#fff;padding:7px 14px;font-size:12px;cursor:pointer;color:#555}
+.btn-test:hover{border-color:#999;color:#111}
+.btn-test.testing{opacity:0.5;cursor:not-allowed}
+.test-result{font-size:12px;padding:8px 12px;margin-top:4px;display:none}
+.test-result.success{display:block;background:#e6f4ea;color:#1a7a32}
+.test-result.error{display:block;background:#fce8e6;color:#c5221f}
+
+.notice{padding:10px 14px;background:#f9f9f9;border:1px solid #e0e0e0;font-size:12px;color:#555;line-height:1.6}
+.notice strong{font-weight:500;color:#111}
+
+/* Style editor */
+.style-editor{border:1px solid #e0e0e0}
+.style-editor-head{padding:8px 12px;border-bottom:1px solid #e0e0e0;background:#fafafa;display:flex;align-items:center;gap:8px}
+.style-editor-head .se-style-name{font-size:12px;font-weight:500;color:#111}
+.style-editor-head .se-style-desc{font-size:11px;color:#999}
+.se-actions{margin-left:auto;display:flex;gap:6px}
+.se-btn{border:1px solid #e0e0e0;background:#fff;padding:2px 10px;font-size:11px;cursor:pointer;color:#555;height:24px}
+.se-btn:hover{border-color:#999;color:#111}
+.se-btn.danger:hover{border-color:#c00;color:#c00}
+.style-editor-body{padding:10px 12px}
+.style-editor-body .form-row+.form-row{margin-top:8px}
+.add-style-section{padding-top:8px;text-align:center}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d0d0d0}
+
+/* ─── Mobile bar (hidden on desktop) ──────────────────── */
+.mobile-bar{display:none}
+
+/* ─── Responsive: ≤768px ─────────────────────────────── */
+@media (max-width:768px){
+  body{font-size:13px;overflow:auto;position:static}
+
+  /* Header: 收缩 */
+  header{padding:0 12px;gap:6px;height:44px}
+  header h1{font-size:14px}
+  header h1 span{display:none}
+  .hbtn{padding:4px 8px;font-size:11px}
+  #btn-undo,#btn-redo{display:none}  /* 移动端隐藏撤销/重做按钮 */
+
+  /* Mobile bar: 顶部 Tab 切换 */
+  .mobile-bar{display:flex;border-bottom:1px solid #e0e0e0;background:#fff;flex-shrink:0}
+  .mb-tab{flex:1;padding:10px 0;border:none;background:none;font-size:12px;color:#999;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;white-space:nowrap}
+  .mb-tab.active{color:#111;border-bottom-color:#111;font-weight:500}
+
+  /* Main: 改为垂直堆叠 */
+  main{display:flex;flex-direction:column;overflow-y:auto;gap:0}
+  .col{display:flex;border-left:none !important;border-bottom:1px solid #e0e0e0}
+  .col-head{padding:9px 12px;user-select:none}
+  .col-foot{padding:8px 12px}
+
+  /* 原文栏 */
+  #col-input{flex:0 0 auto;min-height:180px}
+  #col-input .col-body{padding:8px 12px;flex:1;min-height:120px}
+  #input-text{font-size:14px;-webkit-user-select:text;user-select:text}
+
+  /* 风格栏 */
+  #col-styles{flex:0 0 auto}
+  #col-styles .col-body{padding:10px 12px}
+  .style-list{flex-direction:row;flex-wrap:wrap;gap:6px;overflow-y:visible;flex:0 0 auto}
+  .style-btn{flex:1 0 calc(50% - 3px);min-width:0;padding:8px}
+  #btn-polish{padding:10px;font-size:13px;margin-top:10px}
+
+  /* 结果栏：取消滚动，内容撑开页面 */
+  #col-result{flex:none;min-height:0;border-bottom:none}
+  #col-result .col-body{padding:10px 12px;overflow:visible;flex:none}
+  #result-area{font-size:14px;overflow:visible;flex:none;max-height:none}
+
+  /* Modal: 全屏 */
+  .modal{width:100vw;max-width:100vw;height:100vh;max-height:100vh;border:none}
+  .overlay{align-items:stretch}
+  .tabs{padding:0 12px}
+  .tab-btn{padding:11px 0;font-size:13px}
+  .tab-panel{padding:16px;gap:14px}
+  .radio-group label{padding:8px 0}
+
+  /* Header 标题简化 */
+  header h1{font-size:13px}
+  .hbtn{height:26px}
+
+  /* Notice 文字调小 */
+  .notice{font-size:11px;padding:8px 12px}
+  .form-row label{font-size:11px}
+}
+
+/* 极小屏进一步压缩 */
+@media (max-width:380px){
+  .style-btn{flex:1 0 100%}
+  .modal-foot .btn-save,.modal-foot .btn-cancel{padding:7px 12px;font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>文本润色 <span style="font-size:11px;color:#999;font-weight:400;margin-left:6px">v0.1 by Daydream</span></h1>
+  <button class="hbtn" id="btn-undo" disabled title="撤回 (Ctrl+Z)">撤回</button>
+  <button class="hbtn" id="btn-redo" disabled title="重做 (Ctrl+Y)">重做</button>
+  <button class="hbtn" id="btn-settings">设置</button>
+</header>
+
+<div class="mobile-bar" id="mobile-bar">
+  <span style="flex:1;text-align:center;font-size:12px;color:#555">移动视图</span>
+</div>
+
+<main>
+  <!-- 左栏：原文 -->
+  <div class="col" id="col-input">
+    <div class="col-head">原文</div>
+    <div class="col-body">
+      <textarea id="input-text" placeholder="在此粘贴或输入需要润色的文本…"></textarea>
+    </div>
+    <div class="col-foot">
+      <span style="font-size:12px;color:#bbb">字数</span>
+      <span id="char-count" style="font-size:12px;color:#bbb">0</span>
+    </div>
+  </div>
+
+  <!-- 中栏：风格 -->
+  <div class="col" id="col-styles">
+    <div class="col-head">润色风格</div>
+    <div class="col-body" style="padding:12px 12px 0">
+      <div class="style-list" id="style-list"></div>
+      <button id="btn-polish" disabled>开始润色</button>
+    </div>
+    <div class="col-foot" style="justify-content:center">
+      <span style="font-size:11px;color:#bbb">先在设置中配置 API</span>
+    </div>
+  </div>
+
+  <!-- 右栏：结果 -->
+  <div class="col" id="col-result">
+    <div class="col-head">
+      润色结果
+      <label class="diff-toggle" id="diff-label" style="display:none">
+        <input type="checkbox" id="diff-toggle"> 差异对比
+      </label>
+    </div>
+    <div class="col-body">
+      <div id="result-area"><span class="placeholder">润色结果将在此显示</span></div>
+    </div>
+    <div class="col-foot">
+      <div class="result-controls" style="width:100%">
+        <button id="btn-copy" style="display:none">复制</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- 设置弹窗 -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <div class="modal-head">
+      <h2>设&nbsp;置</h2>
+      <button class="modal-close" id="btn-close-modal">&#x2715;</button>
+    </div>
+    <div class="tabs" id="modal-tabs">
+      <button class="tab-btn active" data-tab="api">API设置</button>
+      <button class="tab-btn" data-tab="styles">风格模板</button>
+    </div>
+    <div class="modal-body">
+      <!-- ======= Tab: API 设置 ======= -->
+      <div class="tab-panel active" id="tab-api">
+        <div class="notice">
+          <strong>说明：</strong>API Key 仅存储在本地浏览器（localStorage），不会上传至任何服务器。硅基流动 API 原生支持 CORS，可直接双击 HTML 文件使用。
+        </div>
+        <div class="form-row">
+          <label>API 类型</label>
+          <div class="radio-group" id="api-type-group">
+            <label><input type="radio" name="apiType" value="siliconflow" checked> 硅基流动</label>
+            <label><input type="radio" name="apiType" value="openai"> OpenAI</label>
+            <label><input type="radio" name="apiType" value="anthropic"> Anthropic</label>
+            <label><input type="radio" name="apiType" value="custom"> 自定义</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="api-key">API Key</label>
+          <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
+          <span class="form-hint" id="key-hint"></span>
+        </div>
+        <div class="form-row" id="row-base-url" style="display:none">
+          <label for="api-base-url">Base URL</label>
+          <input type="url" id="api-base-url" placeholder="https://your-api-endpoint.com/v1">
+          <span class="form-hint">使用 OpenAI 兼容格式（/chat/completions）</span>
+        </div>
+        <div class="form-row">
+          <label for="api-model">模型</label>
+          <input type="text" id="api-model" placeholder="">
+          <span class="form-hint" id="model-hint"></span>
+        </div>
+        <div class="form-row" id="row-openai-url" style="display:none">
+          <label for="openai-base-url">OpenAI Base URL（可选）</label>
+          <input type="url" id="openai-base-url" placeholder="https://api.openai.com/v1">
+          <span class="form-hint">如使用代理或第三方中转，在此填写自定义地址</span>
+        </div>
+        <div class="form-row-inline" style="align-items:center">
+          <button class="btn-test" id="btn-test">测试连接</button>
+          <span class="test-result" id="test-result"></span>
+        </div>
+      </div>
+
+      <!-- ======= Tab: 风格模板 ======= -->
+      <div class="tab-panel" id="tab-styles">
+        <div class="notice">
+          <strong>提示：</strong>修改提示词后自动保存。点击"恢复默认"可将单个风格重置为原始版本。"添加风格"可创建自定义模板。自定义数据存储在本地浏览器。
+        </div>
+        <div id="style-editors"></div>
+        <div class="add-style-section">
+          <button class="btn-cancel" id="btn-add-style">+ 添加风格</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" id="btn-cancel-modal">关闭</button>
+      <button class="btn-save" id="btn-save-settings">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+
+// ─── Default Styles (immutable reference) ─────────────────
+const DEFAULT_STYLES = [
+  { id:'wechat',   name:'微信对话体', desc:'简洁客气，要点前置',  prompt:'你是一名沟通专家，请将以下文本改写为适合发给领导的微信消息风格：\n要求：\n1. 语气简洁客气，不啰嗦\n2. 核心要点前置，让对方第一句话就能抓住重点\n3. 避免过于正式的官方语气，但保持基本礼貌\n4. 长段落拆分为短句，方便手机阅读\n5. 如果是请示/汇报，结尾加一句请示意见或告知处理结果\n只输出润色后的文本，不要加任何解释或标注。' },
+  { id:'official', name:'公文请示体', desc:'格式规范，逐级呈报',  prompt:'你是一名公文写作专家，请将以下文本改写为标准公文请示格式：\n要求：\n1. 包含标准公文结构：标题、主送单位、正文（事由+请示内容+请示理由）、结尾敬语、落款位置\n2. 语言规范正式，使用被动语态和规范公文用语\n3. 逐级呈报语气，措辞严谨\n4. 避免口语化表达\n只输出润色后的文本，不要加任何解释。' },
+  { id:'report',   name:'正式报告体', desc:'数据支撑，结论明确',  prompt:'你是一名专业报告撰写者，请将以下文本改写为正式报告风格：\n要求：\n1. 结构清晰：背景→问题/现状→分析→结论/建议\n2. 语言客观，多用数据和事实支撑（如原文没有数据，保持原有信息不编造）\n3. 结论明确，不含糊\n4. 使用标题和段落层次区分内容\n5. 措辞正式，避免口语化\n只输出润色后的文本，不要加任何解释。' },
+  { id:'english',  name:'英文翻译体', desc:'中英对照，术语准确',  prompt:'你是一名专业翻译，请将以下中文文本翻译成英文，并以中英对照格式呈现：\n格式要求：\n- 逐段对照：先输出原中文段落，下方紧跟英文译文\n- 中文行前加 [中] 标记，英文行前加 [EN] 标记\n- 专业术语准确，措辞地道\n- 如果是对话/消息，保持自然的英文表达\n只输出对照文本，不要加任何其他说明。' },
+  { id:'casual',   name:'口语化简化', desc:'去除官话，缩短句子',  prompt:'你是一名沟通顾问，请将以下文本改写为清晰易懂的口语化表达：\n要求：\n1. 删除所有官话套话（如"为切实推进"、"深入贯彻"等）\n2. 长句拆短，每句不超过30字\n3. 用日常用语替代专业术语（如有专业词必须保留，加括号说明）\n4. 保留所有核心信息，不遗漏要点\n5. 读起来像正常人说话\n只输出润色后的文本，不要加任何解释。' }
+];
+
+// ─── Runtime styles (loaded from localStorage or defaults) ─
+function loadStyles(){
+  try{ const d=JSON.parse(localStorage.getItem('polish_styles')); if(Array.isArray(d)&&d.length)return d; }
+  catch{}
+  return DEFAULT_STYLES.map(s=>({...s}));
+}
+function saveStyles(styles){ localStorage.setItem('polish_styles',JSON.stringify(styles)); }
+function getDefaultStyle(id){ return DEFAULT_STYLES.find(s=>s.id===id); }
+
+let STYLES = loadStyles();
+
+// ─── Init sidebar style buttons ───────────────────────────
+let selectedStyle = 0;
+function renderStyleButtons(){
+  const styleList = document.getElementById('style-list');
+  styleList.innerHTML = '';
+  STYLES.forEach((s,i)=>{
+    const btn = document.createElement('button');
+    btn.className = 'style-btn' + (selectedStyle===i?' active':'');
+    btn.innerHTML = `<span class="style-name">${escHtml(s.name)}</span><span class="style-desc">${escHtml(s.desc)}</span>`;
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.style-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedStyle = i;
+    });
+    styleList.appendChild(btn);
+  });
+}
+renderStyleButtons();
+
+// ─── State ────────────────────────────────────────────────
+const HISTORY_MAX = 20;
+let history = {stack:[], index:-1};
+let currentRawResult = '';
+let isPolishing = false;
+let currentAbort = null;
+
+// ─── Config ───────────────────────────────────────────────
+function loadConfig(){
+  try{return JSON.parse(localStorage.getItem('polish_config')||'null')||{};}
+  catch{return {};}
+}
+function saveConfig(cfg){localStorage.setItem('polish_config',JSON.stringify(cfg));}
+
+function checkApiConfig(){
+  const cfg = loadConfig();
+  const hasKey = !!(cfg.apiKey && cfg.apiKey.trim());
+  document.getElementById('btn-polish').disabled = !hasKey;
+  const footHint = document.querySelector('main .col:nth-child(2) .col-foot span');
+  if(footHint) footHint.style.display = hasKey?'none':'';
+  return hasKey;
+}
+
+// ─── Input char count ─────────────────────────────────────
+const inputText = document.getElementById('input-text');
+const charCount = document.getElementById('char-count');
+inputText.addEventListener('input',()=>{
+  const l = inputText.value.length;
+  charCount.textContent = l;
+  document.getElementById('btn-polish').disabled = l===0 || !loadConfig().apiKey;
+});
+
+// ─── History ──────────────────────────────────────────────
+function pushHistory(text){
+  history.stack = history.stack.slice(0, history.index+1);
+  history.stack.push(text);
+  if(history.stack.length > HISTORY_MAX) history.stack.shift();
+  history.index = history.stack.length - 1;
+  updateHistoryBtns();
+}
+function updateHistoryBtns(){
+  document.getElementById('btn-undo').disabled = history.index <= 0;
+  document.getElementById('btn-redo').disabled = history.index >= history.stack.length-1;
+}
+document.getElementById('btn-undo').addEventListener('click',()=>{
+  if(history.index > 0){ history.index--; setResult(history.stack[history.index]); updateHistoryBtns(); }
+});
+document.getElementById('btn-redo').addEventListener('click',()=>{
+  if(history.index < history.stack.length-1){ history.index++; setResult(history.stack[history.index]); updateHistoryBtns(); }
+});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();document.getElementById('btn-undo').click();}
+  if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();document.getElementById('btn-redo').click();}
+});
+
+// ─── Diff (word-level LCS) ────────────────────────────────
+function tokenize(text){return text.match(/[\u4e00-\u9fa5]|[a-zA-Z0-9]+|[^\s]/g)||[];}
+function lcs(a,b){
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},()=>new Uint16Array(n+1));
+  for(let i=m-1;i>=0;i--)for(let j=n-1;j>=0;j--)
+    dp[i][j]=a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const res=[];let i=0,j=0;
+  while(i<m&&j<n){
+    if(a[i]===b[j]){res.push({type:'eq',v:a[i]});i++;j++;}
+    else if(dp[i+1][j]>=dp[i][j+1]){res.push({type:'del',v:a[i]});i++;}
+    else{res.push({type:'ins',v:b[j]});j++;}
+  }
+  while(i<m)res.push({type:'del',v:a[i++]});
+  while(j<n)res.push({type:'ins',v:b[j++]});
+  return res;
+}
+function buildDiff(orig,result){
+  const a=tokenize(orig),b=tokenize(result);
+  const ops=lcs(a,b);
+  return ops.map(op=>{
+    const v=escHtml(op.v);
+    if(op.type==='eq')return v;
+    if(op.type==='del')return `<del>${v}</del>`;
+    return `<ins>${v}</ins>`;
+  }).join('');
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');}
+
+// ─── Set result display ───────────────────────────────────
+function setResult(text){
+  currentRawResult = text;
+  renderResult();
+  document.getElementById('btn-copy').style.display = text?'':'none';
+  document.getElementById('diff-label').style.display = text?'flex':'none';
+}
+function renderResult(){
+  const area = document.getElementById('result-area');
+  const diffOn = document.getElementById('diff-toggle').checked;
+  if(!currentRawResult){ area.innerHTML='<span class="placeholder">润色结果将在此显示</span>'; return; }
+  if(diffOn && inputText.value.trim()){ area.innerHTML = buildDiff(inputText.value.trim(), currentRawResult); }
+  else { area.textContent = currentRawResult; }
+}
+document.getElementById('diff-toggle').addEventListener('change', renderResult);
+
+// ─── Copy ─────────────────────────────────────────────────
+document.getElementById('btn-copy').addEventListener('click',async()=>{
+  if(!currentRawResult)return;
+  try{
+    await navigator.clipboard.writeText(currentRawResult);
+    const btn=document.getElementById('btn-copy');
+    btn.textContent='已复制';btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='复制';btn.classList.remove('copied');},2000);
+  }catch{
+    const ta=document.createElement('textarea');ta.value=currentRawResult;
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+  }
+});
+
+// ─── API presets ──────────────────────────────────────────
+const API_PRESETS = {
+  siliconflow:{ base:'https://api.siliconflow.cn/v1', model:'Qwen/Qwen3-8B', hint:'硅基流动：cloud.siliconflow.cn 获取 Key' },
+  openai:     { base:'https://api.openai.com/v1',     model:'gpt-4o-mini',   hint:'OpenAI API Key（sk-...）' },
+  anthropic:  { base:'',                              model:'claude-3-haiku-20240307', hint:'Anthropic API Key' },
+  custom:     { base:'',                              model:'',              hint:'自定义 OpenAI 兼容 API Key' }
+};
+
+function buildApiParams(){
+  const type = document.querySelector('input[name=apiType]:checked').value;
+  const key = document.getElementById('api-key').value.trim();
+  const preset = API_PRESETS[type] || API_PRESETS.custom;
+  let base;
+  if(type==='custom') base = document.getElementById('api-base-url').value.trim() || '';
+  else if(type==='openai') base = document.getElementById('openai-base-url').value.trim() || preset.base;
+  else base = preset.base;
+  base = base.replace(/\/+$/,'');
+  const model = document.getElementById('api-model').value.trim() || preset.model || 'gpt-4o-mini';
+  return {type, key, base, model};
+}
+
+// ─── API: Test connection ─────────────────────────────────
+document.getElementById('btn-test').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-test');
+  const resEl = document.getElementById('test-result');
+  const params = buildApiParams();
+  if(!params.key){ resEl.className='test-result error'; resEl.textContent='请先填写 API Key'; return; }
+  if(!params.base){ resEl.className='test-result error'; resEl.textContent='无法确定 Base URL'; return; }
+
+  btn.textContent='测试中...'; btn.classList.add('testing'); btn.disabled=true;
+  resEl.className='test-result'; resEl.textContent='';
+
+  try{
+    const res = await fetch(`${params.base}/chat/completions`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${params.key}`},
+      body:JSON.stringify({model:params.model, messages:[{role:'user',content:'hi'}], max_tokens:1, stream:false}),
+      signal: AbortSignal.timeout(15000)
+    });
+    if(res.ok){
+      resEl.className='test-result success';
+      resEl.textContent=`连接成功 — ${params.model} (${res.status})`;
+    } else {
+      const t = await res.text().catch(()=>'');
+      resEl.className='test-result error';
+      resEl.textContent=`API 错误 ${res.status}: ${t.slice(0,150)}`;
+    }
+  }catch(e){
+    resEl.className='test-result error';
+    if(e.name==='TimeoutError') resEl.textContent='连接超时，请检查 API 地址和网络';
+    else if(e.message.includes('Failed to fetch')) resEl.textContent='网络请求失败，请检查 URL 是否正确、是否支持 CORS';
+    else resEl.textContent=`连接失败：${e.message.slice(0,150)}`;
+  }
+  btn.textContent='测试连接'; btn.classList.remove('testing'); btn.disabled=false;
+});
+
+// ─── API call ─────────────────────────────────────────────
+async function callAPI(userText){
+  const cfg = loadConfig();
+  const style = STYLES[selectedStyle];
+  const messages = [{role:'user', content: userText}];
+  const sysMsg = {role:'system', content: style.prompt};
+
+  if(cfg.apiType==='anthropic'){
+    return callAnthropic(cfg, sysMsg.content, messages);
+  } else {
+    return callOpenAICompat(cfg, sysMsg, messages);
+  }
+}
+
+async function callOpenAICompat(cfg, sysMsg, messages){
+  const type = cfg.apiType || 'siliconflow';
+  const preset = API_PRESETS[type] || API_PRESETS.custom;
+  let base;
+  if(type==='custom') base = cfg.baseUrl || '';
+  else if(type==='openai') base = cfg.openaiBaseUrl || preset.base;
+  else base = preset.base;
+  base = base.replace(/\/+$/,'');
+  if(!base) throw new Error('未配置 Base URL');
+  const model = cfg.model || preset.model || 'gpt-4o-mini';
+
+  const res = await fetch(`${base}/chat/completions`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${cfg.apiKey}`},
+    body:JSON.stringify({model, messages:[sysMsg,...messages], stream:true}),
+    signal: currentAbort.signal
+  });
+  if(!res.ok){const t=await res.text();throw new Error(`API错误 ${res.status}: ${t.slice(0,300)}`);}
+  return readSSE(res);
+}
+
+async function callAnthropic(cfg, systemPrompt, messages){
+  const base = 'https://api.anthropic.com';
+  const model = cfg.model || 'claude-3-haiku-20240307';
+  const res = await fetch(`${base}/v1/messages`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':cfg.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model, system:systemPrompt, messages, max_tokens:4096, stream:true}),
+    signal: currentAbort.signal
+  });
+  if(!res.ok){const t=await res.text();throw new Error(`API错误 ${res.status}: ${t.slice(0,200)}`);}
+  return readAnthropicSSE(res);
+}
+
+async function* readSSE(response){
+  const reader=response.body.getReader();
+  const dec=new TextDecoder();
+  let buf='';
+  while(true){
+    const{done,value}=await reader.read();
+    if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\n');
+    buf=lines.pop();
+    for(const line of lines){
+      if(!line.startsWith('data:'))continue;
+      const data=line.slice(5).trim();
+      if(data==='[DONE]')return;
+      try{ const j=JSON.parse(data); const delta=j.choices?.[0]?.delta?.content; if(delta)yield delta; }catch{}
+    }
+  }
+}
+
+async function* readAnthropicSSE(response){
+  const reader=response.body.getReader();
+  const dec=new TextDecoder();
+  let buf='';
+  while(true){
+    const{done,value}=await reader.read();
+    if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\n');
+    buf=lines.pop();
+    for(const line of lines){
+      if(!line.startsWith('data:'))continue;
+      const data=line.slice(5).trim();
+      try{ const j=JSON.parse(data); if(j.type==='content_block_delta'&&j.delta?.text)yield j.delta.text; if(j.type==='message_stop')return; }catch{}
+    }
+  }
+}
+
+// ─── Polish action ────────────────────────────────────────
+document.getElementById('btn-polish').addEventListener('click', startPolish);
+
+async function startPolish(){
+  const text = inputText.value.trim();
+  if(!text){return;}
+  if(!checkApiConfig()){openModal();return;}
+  if(isPolishing){ if(currentAbort) currentAbort.abort(); stopPolish(); return; }
+
+  isPolishing = true;
+  currentAbort = new AbortController();
+  document.getElementById('btn-polish').textContent = '停止';
+  document.getElementById('btn-polish').style.background='#c00';
+
+  const area = document.getElementById('result-area');
+  area.innerHTML = '<span class="loading-dots">生成中</span>';
+  document.getElementById('btn-copy').style.display='none';
+  document.getElementById('diff-label').style.display='none';
+
+  let accumulated = '';
+  try{
+    const gen = await callAPI(text);
+    for await(const chunk of gen){
+      accumulated += chunk;
+      area.textContent = accumulated;
+      area.scrollTop = area.scrollHeight;
+    }
+    currentRawResult = accumulated;
+    pushHistory(accumulated);
+    renderResult();
+    document.getElementById('btn-copy').style.display='';
+    document.getElementById('diff-label').style.display='flex';
+  }catch(e){
+    if(e.name==='AbortError'){
+      if(accumulated){ currentRawResult=accumulated; pushHistory(accumulated); renderResult(); document.getElementById('btn-copy').style.display=''; document.getElementById('diff-label').style.display='flex'; }
+      else area.innerHTML='<span class="placeholder">已停止生成</span>';
+    } else {
+      area.innerHTML=`<span style="color:#c00">错误：${escHtml(e.message)}</span>`;
+    }
+  }
+  stopPolish();
+}
+
+function stopPolish(){
+  isPolishing=false; currentAbort=null;
+  const btn=document.getElementById('btn-polish');
+  btn.textContent='开始润色'; btn.style.background='';
+}
+
+// ─── Settings modal: tabs ─────────────────────────────────
+const overlay = document.getElementById('overlay');
+const modal = document.getElementById('modal');
+
+document.querySelectorAll('#modal-tabs .tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('#modal-tabs .tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+function switchTab(name){
+  const btn = document.querySelector(`#modal-tabs .tab-btn[data-tab="${name}"]`);
+  if(btn) btn.click();
+}
+
+// ─── Settings modal: open/close ───────────────────────────
+function openModal(){
+  const cfg=loadConfig();
+  const type=cfg.apiType||'siliconflow';
+  document.querySelectorAll('input[name=apiType]').forEach(r=>{r.checked=r.value===type;});
+  document.getElementById('api-key').value=cfg.apiKey||'';
+  document.getElementById('api-base-url').value=cfg.baseUrl||'';
+  document.getElementById('openai-base-url').value=cfg.openaiBaseUrl||'';
+  document.getElementById('api-model').value=cfg.model||'';
+  updateModalFields(type);
+  document.getElementById('test-result').className='test-result';
+  document.getElementById('test-result').textContent='';
+  renderStyleEditor();
+  overlay.classList.add('open');
+  setTimeout(()=>document.getElementById('api-key').focus(),50);
+}
+function closeModal(){ overlay.classList.remove('open'); }
+
+function updateModalFields(type){
+  document.getElementById('row-base-url').style.display=type==='custom'?'flex':'none';
+  document.getElementById('row-openai-url').style.display=type==='openai'?'flex':'none';
+  const modelHints={
+    siliconflow:'默认 Qwen/Qwen3-8B（可填其他如 deepseek-ai/DeepSeek-V3）',
+    openai:'默认 gpt-4o-mini', anthropic:'默认 claude-3-haiku-20240307', custom:'取决于你的服务'
+  };
+  document.getElementById('model-hint').textContent=modelHints[type]||'留空则使用默认值';
+  const keyHints={
+    siliconflow:'前往 cloud.siliconflow.cn → 账户 → API Key 获取',
+    openai:'platform.openai.com → API keys 获取',
+    anthropic:'console.anthropic.com → API Keys 获取',
+    custom:'填写你的自定义 API Key'
+  };
+  document.getElementById('key-hint').textContent=keyHints[type]||'';
+  document.getElementById('api-model').placeholder=(API_PRESETS[type]||{}).model||'';
+}
+
+document.querySelectorAll('input[name=apiType]').forEach(r=>{
+  r.addEventListener('change',()=>updateModalFields(r.value));
+});
+
+document.getElementById('btn-settings').addEventListener('click',openModal);
+document.getElementById('btn-close-modal').addEventListener('click',closeModal);
+document.getElementById('btn-cancel-modal').addEventListener('click',closeModal);
+overlay.addEventListener('click',e=>{if(e.target===overlay)closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// ─── Settings: save API config ────────────────────────────
+document.getElementById('btn-save-settings').addEventListener('click',()=>{
+  const type=document.querySelector('input[name=apiType]:checked').value;
+  const cfg={
+    apiType:type,
+    apiKey:document.getElementById('api-key').value.trim(),
+    baseUrl:document.getElementById('api-base-url').value.trim(),
+    openaiBaseUrl:document.getElementById('openai-base-url').value.trim(),
+    model:document.getElementById('api-model').value.trim()
+  };
+  saveConfig(cfg);
+  closeModal();
+  checkApiConfig();
+  document.getElementById('btn-polish').disabled=!cfg.apiKey||!inputText.value.trim();
+});
+
+// ─── Style editor ─────────────────────────────────────────
+function renderStyleEditor(){
+  const container = document.getElementById('style-editors');
+  container.innerHTML = '';
+  STYLES.forEach((s,i)=>{
+    const div = document.createElement('div');
+    div.className = 'style-editor';
+    div.innerHTML = `
+      <div class="style-editor-head">
+        <span class="se-style-name">${escHtml(s.name)}</span>
+        <span class="se-style-desc">${escHtml(s.desc)}</span>
+        <div class="se-actions">
+          <button class="se-btn restore-btn" data-idx="${i}">恢复默认</button>
+          <button class="se-btn danger delete-btn" data-idx="${i}">删除</button>
+        </div>
+      </div>
+      <div class="style-editor-body">
+        <div class="form-row">
+          <label>名称</label>
+          <input type="text" class="style-input-name" value="${escHtml(s.name)}" data-idx="${i}">
+        </div>
+        <div class="form-row">
+          <label>描述</label>
+          <input type="text" class="style-input-desc" value="${escHtml(s.desc)}" data-idx="${i}">
+        </div>
+        <div class="form-row">
+          <label>System Prompt</label>
+          <textarea class="style-input-prompt" data-idx="${i}" rows="6">${escHtml(s.prompt)}</textarea>
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+
+  // Event: save on input change
+  container.querySelectorAll('.style-input-name, .style-input-desc, .style-input-prompt').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const idx = parseInt(el.dataset.idx);
+      const nameEl = container.querySelector(`.style-input-name[data-idx="${idx}"]`);
+      const descEl = container.querySelector(`.style-input-desc[data-idx="${idx}"]`);
+      const promptEl = container.querySelector(`.style-input-prompt[data-idx="${idx}"]`);
+      STYLES[idx].name = nameEl.value.trim() || '未命名';
+      STYLES[idx].desc = descEl.value.trim();
+      STYLES[idx].prompt = promptEl.value;
+      saveStyles(STYLES);
+      renderStyleButtons();
+      // update header name
+      const headName = container.querySelectorAll('.style-editor-head .se-style-name')[idx];
+      if(headName) headName.textContent = STYLES[idx].name;
+    });
+  });
+
+  // Event: restore default
+  container.querySelectorAll('.restore-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = parseInt(btn.dataset.idx);
+      const def = getDefaultStyle(STYLES[idx].id);
+      if(!def){ alert('该风格无默认版本，无法恢复'); return; }
+      STYLES[idx] = {...def};
+      saveStyles(STYLES);
+      renderStyleButtons();
+      renderStyleEditor();
+      alert(`"${def.name}" 已恢复为默认`);
+    });
+  });
+
+  // Event: delete
+  container.querySelectorAll('.delete-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = parseInt(btn.dataset.idx);
+      if(STYLES.length <= 1){ alert('至少保留一个风格'); return; }
+      const name = STYLES[idx].name;
+      if(!confirm(`确定删除风格"${name}"？`)) return;
+      STYLES.splice(idx,1);
+      if(selectedStyle >= STYLES.length) selectedStyle = STYLES.length-1;
+      saveStyles(STYLES);
+      renderStyleButtons();
+      renderStyleEditor();
+    });
+  });
+}
+
+// ─── Add style ────────────────────────────────────────────
+document.getElementById('btn-add-style').addEventListener('click', ()=>{
+  const newId = 'custom_'+Date.now();
+  STYLES.push({
+    id: newId,
+    name: '新风格',
+    desc: '自定义模板',
+    prompt: '请将以下文本进行润色优化：\n要求：\n1. 保持原意，优化表达\n2. 语言流畅自然\n只输出润色后的文本，不要加任何解释。'
+  });
+  saveStyles(STYLES);
+  renderStyleButtons();
+  renderStyleEditor();
+  // scroll to bottom
+  const container = document.getElementById('style-editors');
+  container.lastElementChild?.scrollIntoView({behavior:'smooth'});
+});
+
+// ─── Init ─────────────────────────────────────────────────
+checkApiConfig();
+updateHistoryBtns();
+
+// ─── Mobile responsive ────────────────────────────────────
+function applyMobileLayout(){
+  const isMobile = window.innerWidth <= 768;
+  if(!isMobile){
+    document.getElementById('mobile-bar').style.display='none';
+    Object.values({a:document.getElementById('col-input'),b:document.getElementById('col-styles'),c:document.getElementById('col-result')}).forEach(c => { c.style.display=''; });
+  } else {
+    document.getElementById('mobile-bar').style.display='flex';
+  }
+}
+
+let lastMobile = window.innerWidth <= 768;
+window.addEventListener('resize', () => {
+  const now = window.innerWidth <= 768;
+  if(now !== lastMobile){ lastMobile = now; applyMobileLayout(); }
+});
+
+applyMobileLayout();
+
+})();
+</script>
+</body>
+</html>
